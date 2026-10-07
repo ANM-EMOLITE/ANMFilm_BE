@@ -15,19 +15,29 @@ public static class DependencyInjection
     {
         services.Configure<AniMapperOptions>(configuration.GetSection(AniMapperOptions.SectionName));
 
-        services.AddHttpClient<IAniMapperClient, AniMapperClient>((sp, client) =>
-        {
-            var options = sp.GetRequiredService<IOptions<AniMapperOptions>>().Value;
+        services.AddMemoryCache();
 
-            var baseUrl = options.BaseUrl.EndsWith('/') ? options.BaseUrl : options.BaseUrl + "/";
+        // AniMapper: giới hạn 60 request/phút → điều tiết request (rate gate) + cache + circuit breaker theo provider.
+        services.AddSingleton<AniMapperRateGate>();
+        services.AddSingleton<AniMapperResponseCache>();
+        services.AddSingleton<ProviderHealth>();
+        services.AddTransient<AniMapperRateLimitHandler>();
 
-            client.BaseAddress = new Uri(baseUrl);
-            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
-        });
+        services.AddHttpClient<AniMapperClient>((sp, client) =>
+            {
+                var options = sp.GetRequiredService<IOptions<AniMapperOptions>>().Value;
+
+                var baseUrl = options.BaseUrl.EndsWith('/') ? options.BaseUrl : options.BaseUrl + "/";
+
+                client.BaseAddress = new Uri(baseUrl);
+                client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
+            })
+            .AddHttpMessageHandler<AniMapperRateLimitHandler>();
+
+        services.AddTransient<IAniMapperClient, CachingAniMapperClient>();
 
         // AniList GraphQL: lấy danh sách anime thịnh hành/phổ biến/theo mùa cho /browse.
-        services.AddMemoryCache();
         services.AddHttpClient<IAniListClient, AniListClient>(client =>
         {
             client.BaseAddress = new Uri("https://graphql.anilist.co/");

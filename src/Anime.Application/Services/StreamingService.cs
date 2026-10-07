@@ -39,7 +39,8 @@ public sealed class StreamingService(IAniMapperClient aniMapperClient) : IStream
         {
             EpisodeData = Guard.Required(request.EpisodeData, "episodeData"),
             Provider = NormalizeProvider(request.Provider),
-            Server = NullIfEmpty(request.Server)
+            Server = NullIfEmpty(request.Server),
+            Refresh = request.Refresh
         };
 
         return aniMapperClient.GetSourceAsync(normalized, cancellationToken);

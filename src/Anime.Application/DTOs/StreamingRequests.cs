@@ -25,4 +25,7 @@ public sealed class SourceRequestDto
     public string? Provider { get; set; }
 
     public string? Server { get; set; }
+
+    /// <summary>true = bỏ qua cache, lấy link mới (link cũ đã hỏng).</summary>
+    public bool Refresh { get; set; }
 }

@@ -42,7 +42,23 @@ Mọi lỗi đều trả về dạng:
 | 400/404/429 | giữ nguyên code của AniMapper (`MEDIA_NOT_FOUND`, `MAPPING_NOT_FOUND`, ...) | Lỗi 4xx từ AniMapper |
 | 502 | `UPSTREAM_ERROR` | AniMapper lỗi 5xx / không kết nối được / JSON sai |
 | 504 | `UPSTREAM_TIMEOUT` | AniMapper quá thời gian chờ |
+| 503 | `PROVIDER_UNAVAILABLE` | Provider đang bị ngắt tạm do lỗi liên tục |
+| 429 | `RATE_LIMITED` | Vượt hạn mức AniMapper, hàng chờ quá lâu |
 | 500 | `INTERNAL_SERVER_ERROR` | Lỗi khác |
+
+## Chống quá tải & tự phục hồi (AniMapper giới hạn 60 request/phút)
+
+Nằm ở `src/Anime.Infrastructure/AniMapper/`, các service không cần biết:
+
+| Thành phần | Tác dụng |
+|---|---|
+| `AniMapperRateGate` + `AniMapperRateLimitHandler` | Điều tiết request lên AniMapper (mặc định 50/phút, burst 10). Gặp 429 thì tạm dừng toàn bộ theo `Retry-After`; chờ lượt quá `MaxQueueWaitSeconds` thì trả 429 `RATE_LIMITED` |
+| `AniMapperResponseCache` | Cache in-memory, gộp request trùng đang chạy. AniMapper lỗi tạm thời (timeout/5xx/429) thì trả **bản cũ** nếu có. Cache ngắn các lỗi 404 |
+| `ProviderHealth` | Circuit breaker theo provider: 3 lỗi timeout/5xx trong 2 phút thì ngắt provider 60s, trả **503 `PROVIDER_UNAVAILABLE`** ngay để client chuyển nguồn |
+| `CachingAniMapperClient` | Bọc `AniMapperClient`, áp các chính sách trên cho từng endpoint |
+
+Thời gian cache (`AniMapperCachePolicies`): search/browse 5 phút, metadata 30 phút, servers 6 giờ, episodes 30 phút, source 20 phút, m3u8 30 phút. Bản dự phòng giữ 6 giờ – 2 ngày.
+`GET /api/v1/stream/source?...&refresh=true` bỏ qua cache để lấy link mới khi link cũ đã hỏng.
 
 ## Cấu hình
 
@@ -52,7 +68,10 @@ Mọi lỗi đều trả về dạng:
 "AniMapper": {
   "BaseUrl": "https://api.animapper.net/",
   "TimeoutSeconds": 30,
-  "UserAgent": "AnimeStreamingApi/1.0"
+  "UserAgent": "AnimeStreamingApi/1.0",
+  "RequestsPerMinute": 50,
+  "BurstSize": 10,
+  "MaxQueueWaitSeconds": 15
 }
 ```
 

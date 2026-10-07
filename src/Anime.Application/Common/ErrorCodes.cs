@@ -17,5 +17,6 @@ public static class ErrorCodes
     public const string RateLimited = "RATE_LIMITED";
     public const string UpstreamError = "UPSTREAM_ERROR";
     public const string UpstreamTimeout = "UPSTREAM_TIMEOUT";
+    public const string ProviderUnavailable = "PROVIDER_UNAVAILABLE";
     public const string InternalServerError = "INTERNAL_SERVER_ERROR";
 }
