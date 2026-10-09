@@ -59,6 +59,14 @@ public sealed class MediaDetailDto
 
     /// <summary>Key là tên provider (vd: ANIMEVIETSUB).</summary>
     public Dictionary<string, StreamingProviderMappingDto>? StreamingProviders { get; set; }
+
+    /// <summary>Bản sao nông với danh sách provider khác (không sửa object gốc đang được cache).</summary>
+    public MediaDetailDto WithStreamingProviders(Dictionary<string, StreamingProviderMappingDto> providers)
+    {
+        var copy = (MediaDetailDto)MemberwiseClone();
+        copy.StreamingProviders = providers;
+        return copy;
+    }
 }
 
 public sealed class TrailerDto

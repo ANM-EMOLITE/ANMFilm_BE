@@ -19,4 +19,9 @@ public static class ErrorCodes
     public const string UpstreamTimeout = "UPSTREAM_TIMEOUT";
     public const string ProviderUnavailable = "PROVIDER_UNAVAILABLE";
     public const string InternalServerError = "INTERNAL_SERVER_ERROR";
+
+    // Admin
+    public const string InvalidCredentials = "INVALID_CREDENTIALS";
+    public const string Unauthorized = "UNAUTHORIZED";
+    public const string SyncInProgress = "SYNC_IN_PROGRESS";
 }

@@ -1,8 +1,12 @@
 using Anime.Application.Interfaces;
 using System.Net;
 using Anime.Infrastructure.AniList;
+using Anime.Infrastructure.Auth;
+using Anime.Infrastructure.Catalog;
 using Anime.Infrastructure.AniMapper;
+using Anime.Infrastructure.Persistence;
 using Anime.Infrastructure.Streaming;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -16,6 +20,26 @@ public static class DependencyInjection
         services.Configure<AniMapperOptions>(configuration.GetSection(AniMapperOptions.SectionName));
 
         services.AddMemoryCache();
+
+        // PostgreSQL: lưu bền vững response AniMapper (metadata, tập, link stream...) để dùng khi upstream sập.
+        services.AddDbContextFactory<AnimeDbContext>(options => options.UseNpgsql(
+            PostgresConnectionString.Normalize(configuration.GetConnectionString("AnimeDb")),
+            // Tự thử lại khi kết nối rớt tạm thời (Neon cold start / cắt kết nối rảnh).
+            npgsql => npgsql.CommandTimeout(30).EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)));
+        services.AddSingleton<PersistentResponseStore>();
+        services.AddHostedService<PersistentCacheMaintenance>();
+
+        // Danh mục anime + admin: đồng bộ chỉ chạy khi admin bấm (hàng đợi + worker), không chạy theo lịch.
+        services.AddSingleton<CatalogStore>();
+        services.AddSingleton<ICatalogStore>(sp => sp.GetRequiredService<CatalogStore>());
+        services.AddTransient<CatalogSyncRunner>();
+        services.AddTransient<StreamPrefetchRunner>();
+        services.AddTransient<StreamHealthRunner>();
+        services.AddSingleton<SyncJobQueue>();
+        services.AddScoped<ISyncJobService, SyncJobService>();
+        services.AddScoped<IAdminCatalogService, AdminCatalogService>();
+        services.AddScoped<IAdminAuthService, AdminAuthService>();
+        services.AddHostedService<SyncJobWorker>();
 
         // AniMapper: giới hạn 60 request/phút → điều tiết request (rate gate) + cache + circuit breaker theo provider.
         services.AddSingleton<AniMapperRateGate>();
@@ -41,7 +65,7 @@ public static class DependencyInjection
         services.AddHttpClient<IAniListClient, AniListClient>(client =>
         {
             client.BaseAddress = new Uri("https://graphql.anilist.co/");
-            client.Timeout = TimeSpan.FromSeconds(20);
+            client.Timeout = TimeSpan.FromSeconds(30);
         });
 
         // HttpClient riêng cho proxy video: theo redirect, giải nén, timeout dài hơn.

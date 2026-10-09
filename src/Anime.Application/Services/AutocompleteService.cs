@@ -5,7 +5,7 @@ using Anime.Application.Interfaces;
 
 namespace Anime.Application.Services;
 
-public sealed class AutocompleteService(IAniMapperClient aniMapperClient) : IAutocompleteService
+public sealed class AutocompleteService(IAniMapperClient aniMapperClient, ICatalogStore catalogStore) : IAutocompleteService
 {
     private const int MaxLimit = 10;
 
@@ -23,9 +23,9 @@ public sealed class AutocompleteService(IAniMapperClient aniMapperClient) : IAut
 
         var response = await aniMapperClient.AutocompleteAsync(normalized, cancellationToken);
 
-        // Chỉ gợi ý media đã có nguồn phát.
+        // Chỉ gợi ý media đã có nguồn phát và không bị admin ẩn.
         var streamableIds = await StreamAvailability.GetStreamableIdsAsync(
-            aniMapperClient, response.Suggestions.Select(s => s.Id), cancellationToken);
+            aniMapperClient, catalogStore, response.Suggestions.Select(s => s.Id), cancellationToken);
         response.Suggestions = response.Suggestions.Where(s => streamableIds.Contains(s.Id)).ToList();
 
         return response;

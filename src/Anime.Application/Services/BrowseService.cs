@@ -1,5 +1,4 @@
 using Anime.Application.Common;
-using Anime.Application.Common.Exceptions;
 using Anime.Application.Common.Validation;
 using Anime.Application.DTOs.Browse;
 using Anime.Application.DTOs.Metadata;
@@ -9,14 +8,17 @@ using Anime.Application.Interfaces;
 namespace Anime.Application.Services;
 
 /// <summary>
-/// Danh sách anime theo tab. Thứ tự lấy từ AniList (sort/lọc chuẩn hơn AniMapper),
-/// sau đó lọc qua AniMapper metadata/batch để chỉ giữ anime đã có nguồn phát.
+/// Danh sách anime theo tab.
+/// – Danh sách đã được admin đồng bộ → đọc từ DB (nhanh, không phụ thuộc upstream).
+/// – Chưa đồng bộ (vd: mùa cũ) → lấy thứ tự từ AniList, lọc qua AniMapper metadata/batch
+///   để chỉ giữ anime đã có nguồn phát.
+/// Anime bị admin ẩn luôn bị loại.
 /// </summary>
-public sealed class BrowseService(IAniListClient aniListClient, IAniMapperClient aniMapperClient) : IBrowseService
+public sealed class BrowseService(
+    IAniListClient aniListClient,
+    IAniMapperClient aniMapperClient,
+    ICatalogStore catalogStore) : IBrowseService
 {
-    public static readonly IReadOnlyCollection<string> Tabs =
-        ["TRENDING", "POPULAR", "SEASON", "NEW", "AIRING", "FINISHED", "MOVIE"];
-
     private const int MaxLimit = 50;
 
     /// <summary>Số item AniList mỗi trang (tối đa của AniList).</summary>
@@ -30,10 +32,33 @@ public sealed class BrowseService(IAniListClient aniListClient, IAniMapperClient
         Guard.InRange(request.Limit, 1, MaxLimit, "limit");
         Guard.NotNegative(request.Offset, "offset");
 
-        var query = BuildQuery(request);
-        var limit = request.Limit;
-        var offset = request.Offset;
+        var list = CatalogLists.Resolve(request.Tab, request.Season, request.SeasonYear);
 
+        var stored = await catalogStore.GetListPageAsync(list.Key, request.Offset, request.Limit, cancellationToken);
+        if (stored is not null)
+        {
+            return new SearchResponseDto
+            {
+                Success = true,
+                Results = stored.Results.ToList(),
+                Total = stored.Total,
+                Limit = request.Limit,
+                Offset = request.Offset,
+                NextOffset = stored.NextOffset,
+                HasNextPage = stored.NextOffset is not null
+            };
+        }
+
+        return await BrowseLiveAsync(list.Query, request.Limit, request.Offset, cancellationToken);
+    }
+
+    private async Task<SearchResponseDto> BrowseLiveAsync(
+        AniListQuery query,
+        int limit,
+        int startOffset,
+        CancellationToken cancellationToken)
+    {
+        var offset = startOffset;
         var results = new List<MediaSearchResultDto>();
         var hasMore = true;
 
@@ -45,7 +70,7 @@ public sealed class BrowseService(IAniListClient aniListClient, IAniMapperClient
             var source = await aniListClient.GetAnimeIdsAsync(query, page, PageSize, cancellationToken);
             var ids = source.Ids.Skip(skip).ToList();
 
-            var streamable = await StreamAvailability.GetStreamableAsync(aniMapperClient, ids, cancellationToken);
+            var streamable = await StreamAvailability.GetStreamableAsync(aniMapperClient, catalogStore, ids, cancellationToken);
 
             var consumed = 0;
             foreach (var id in ids)
@@ -69,50 +94,11 @@ public sealed class BrowseService(IAniListClient aniListClient, IAniMapperClient
             Results = results,
             Total = results.Count,
             Limit = limit,
-            Offset = request.Offset,
+            Offset = startOffset,
             NextOffset = hasMore ? offset : null,
             HasNextPage = hasMore
         };
     }
-
-    private static AniListQuery BuildQuery(BrowseRequestDto request)
-    {
-        var tab = Guard.OneOf(request.Tab, "tab", Tabs) ?? "TRENDING";
-
-        return tab switch
-        {
-            "TRENDING" => new AniListQuery("TRENDING_DESC"),
-            "POPULAR" => new AniListQuery("POPULARITY_DESC"),
-            "SEASON" => BuildSeasonQuery(request),
-            // Anime mới chiếu gần như chưa có nguồn phát, nên lấy anime ra mắt trong 6 tháng gần đây, sắp theo độ phổ biến.
-            "NEW" => new AniListQuery(
-                "POPULARITY_DESC",
-                StartDateGreater: int.Parse(DateTime.UtcNow.AddMonths(-6).ToString("yyyyMMdd"))),
-            "AIRING" => new AniListQuery("POPULARITY_DESC", StatusIn: ["RELEASING"]),
-            "FINISHED" => new AniListQuery("END_DATE_DESC", StatusIn: ["FINISHED"]),
-            "MOVIE" => new AniListQuery("POPULARITY_DESC", Format: "MOVIE"),
-            _ => throw new ValidationException($"Invalid tab: {request.Tab}")
-        };
-    }
-
-    private static AniListQuery BuildSeasonQuery(BrowseRequestDto request)
-    {
-        var (currentSeason, currentYear) = CurrentSeason(DateTime.UtcNow);
-
-        var season = Guard.OneOf(request.Season, "season", MediaEnums.Seasons) ?? currentSeason;
-        var year = request.SeasonYear ?? currentYear;
-        Guard.InRange(year, 1940, 2100, "seasonYear");
-
-        return new AniListQuery("POPULARITY_DESC", Season: season, SeasonYear: year);
-    }
-
-    private static (string Season, int Year) CurrentSeason(DateTime now) => now.Month switch
-    {
-        <= 3 => ("WINTER", now.Year),
-        <= 6 => ("SPRING", now.Year),
-        <= 9 => ("SUMMER", now.Year),
-        _ => ("FALL", now.Year)
-    };
 
     private static MediaSearchResultDto ToResult(MediaDetailDto media) => new()
     {

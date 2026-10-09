@@ -77,7 +77,7 @@ public sealed class CachingAniMapperClient(
 
     public Task<StreamSourceDto> GetSourceAsync(SourceRequestDto request, CancellationToken cancellationToken = default)
     {
-        var key = Key("source", request.EpisodeData, request.Provider, request.Server);
+        var key = SourceKey(request.EpisodeData, request.Provider, request.Server);
         if (request.Refresh)
             cache.Invalidate(key);
 
@@ -118,6 +118,10 @@ public sealed class CachingAniMapperClient(
             throw;
         }
     }
+
+    /// <summary>Cache key của link stream 1 tập (dùng chung với job lưu sẵn nguồn phát).</summary>
+    public static string SourceKey(string? episodeData, string? provider, string? server)
+        => Key("source", episodeData, provider, server);
 
     private static string Key(string endpoint, params object?[] parts)
         => endpoint + "?" + string.Join('&', parts.Select(p => p?.ToString() ?? string.Empty));

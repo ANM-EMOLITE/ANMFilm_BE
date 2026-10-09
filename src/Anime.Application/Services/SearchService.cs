@@ -6,7 +6,7 @@ using Anime.Application.Interfaces;
 
 namespace Anime.Application.Services;
 
-public sealed class SearchService(IAniMapperClient aniMapperClient) : ISearchService
+public sealed class SearchService(IAniMapperClient aniMapperClient, ICatalogStore catalogStore) : ISearchService
 {
     private const int MaxLimit = 100;
 
@@ -37,7 +37,7 @@ public sealed class SearchService(IAniMapperClient aniMapperClient) : ISearchSer
             total = upstream.Total;
 
             var streamableIds = await StreamAvailability.GetStreamableIdsAsync(
-                aniMapperClient, upstream.Results.Select(r => r.Id), cancellationToken);
+                aniMapperClient, catalogStore, upstream.Results.Select(r => r.Id), cancellationToken);
 
             var consumed = 0;
             foreach (var item in upstream.Results)

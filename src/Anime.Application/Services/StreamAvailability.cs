@@ -4,13 +4,15 @@ using Anime.Application.Interfaces;
 namespace Anime.Application.Services;
 
 /// <summary>
-/// Kiểm tra media nào đã có nguồn phát (streamingProviders không rỗng) qua metadata/batch.
+/// Kiểm tra media nào đã có nguồn phát (streamingProviders không rỗng) qua metadata/batch,
+/// và loại các media bị admin ẩn.
 /// </summary>
 internal static class StreamAvailability
 {
-    /// <summary>Trả về metadata của các media có nguồn phát, key = media ID.</summary>
+    /// <summary>Trả về metadata của các media có nguồn phát và không bị ẩn, key = media ID.</summary>
     public static async Task<Dictionary<int, MediaDetailDto>> GetStreamableAsync(
         IAniMapperClient aniMapperClient,
+        ICatalogStore catalogStore,
         IEnumerable<int> ids,
         CancellationToken cancellationToken)
     {
@@ -20,15 +22,22 @@ internal static class StreamAvailability
 
         var batch = await aniMapperClient.GetMetadataBatchAsync(string.Join(',', distinctIds), cancellationToken);
 
-        return batch.Results
+        var streamable = batch.Results
             .Where(m => m.StreamingProviders is { Count: > 0 })
             .DistinctBy(m => m.Id)
             .ToDictionary(m => m.Id);
+
+        var hidden = await catalogStore.GetHiddenIdsAsync(streamable.Keys, cancellationToken);
+        foreach (var id in hidden)
+            streamable.Remove(id);
+
+        return streamable;
     }
 
     public static async Task<HashSet<int>> GetStreamableIdsAsync(
         IAniMapperClient aniMapperClient,
+        ICatalogStore catalogStore,
         IEnumerable<int> ids,
         CancellationToken cancellationToken)
-        => (await GetStreamableAsync(aniMapperClient, ids, cancellationToken)).Keys.ToHashSet();
+        => (await GetStreamableAsync(aniMapperClient, catalogStore, ids, cancellationToken)).Keys.ToHashSet();
 }
