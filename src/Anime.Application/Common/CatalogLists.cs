@@ -91,9 +91,12 @@ public static class CatalogLists
     {
         "TRENDING" => new(tab, tab, Labels[tab], new AniListQuery("TRENDING_DESC")),
         "POPULAR" => new(tab, tab, Labels[tab], new AniListQuery("POPULARITY_DESC")),
-        // Anime mới chiếu gần như chưa có nguồn phát, nên lấy anime ra mắt trong 6 tháng gần đây, sắp theo độ phổ biến.
+        // Phim mới = sắp theo ngày ra mắt (mới nhất trước), trong 6 tháng gần đây.
+        // Loại NOT_YET_RELEASED (chưa chiếu) để không chiếm chỗ bằng phim tương lai chưa có nguồn.
+        // Khác POPULARITY_DESC cũ: phim vừa chiếu dù chưa nổi vẫn được kéo về.
         "NEW" => new(tab, tab, Labels[tab], new AniListQuery(
-            "POPULARITY_DESC",
+            "START_DATE_DESC",
+            StatusIn: ["RELEASING", "FINISHED"],
             StartDateGreater: int.Parse(today.AddMonths(-6).ToString("yyyyMMdd")))),
         "AIRING" => new(tab, tab, Labels[tab], new AniListQuery("POPULARITY_DESC", StatusIn: ["RELEASING"])),
         "FINISHED" => new(tab, tab, Labels[tab], new AniListQuery("END_DATE_DESC", StatusIn: ["FINISHED"])),
