@@ -36,10 +36,15 @@ public static class DependencyInjection
         services.AddTransient<StreamPrefetchRunner>();
         services.AddTransient<StreamHealthRunner>();
         services.AddSingleton<SyncJobQueue>();
+        services.AddSingleton<SyncJobCanceller>();
         services.AddScoped<ISyncJobService, SyncJobService>();
         services.AddScoped<IAdminCatalogService, AdminCatalogService>();
         services.AddScoped<IAdminAuthService, AdminAuthService>();
         services.AddHostedService<SyncJobWorker>();
+
+        // Tài khoản người xem: đăng ký/đăng nhập, watchlist, lịch sử xem, nhật ký.
+        services.AddScoped<IUserAuthService, Users.UserAuthService>();
+        services.AddScoped<IUserLibraryService, Users.UserLibraryService>();
 
         // AniMapper: giới hạn 60 request/phút → điều tiết request (rate gate) + cache + circuit breaker theo provider.
         services.AddSingleton<AniMapperRateGate>();

@@ -18,6 +18,14 @@ public sealed class AnimeDbContext(DbContextOptions<AnimeDbContext> options) : D
 
     public DbSet<AnimeProviderStatus> ProviderStatuses => Set<AnimeProviderStatus>();
 
+    public DbSet<AppUser> Users => Set<AppUser>();
+
+    public DbSet<WatchlistItem> Watchlist => Set<WatchlistItem>();
+
+    public DbSet<WatchHistoryEntry> WatchHistory => Set<WatchHistoryEntry>();
+
+    public DbSet<UserActivityLog> ActivityLogs => Set<UserActivityLog>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CachedResponse>(entity =>
@@ -140,6 +148,75 @@ public sealed class AnimeDbContext(DbContextOptions<AnimeDbContext> options) : D
             entity.Property(x => x.LastLoginAt).HasColumnName("last_login_at");
 
             entity.HasIndex(x => x.Username).IsUnique();
+        });
+
+        modelBuilder.Entity<AppUser>(entity =>
+        {
+            entity.ToTable("users");
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.Username).HasColumnName("username").HasMaxLength(64);
+            entity.Property(x => x.Email).HasColumnName("email").HasMaxLength(256);
+            entity.Property(x => x.PasswordHash).HasColumnName("password_hash");
+            entity.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(64);
+            entity.Property(x => x.IsBanned).HasColumnName("is_banned");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.LastLoginAt).HasColumnName("last_login_at");
+
+            entity.HasIndex(x => x.Username).IsUnique();
+            entity.HasIndex(x => x.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<WatchlistItem>(entity =>
+        {
+            entity.ToTable("watchlist");
+            entity.HasKey(x => new { x.UserId, x.AnimeId });
+
+            entity.Property(x => x.UserId).HasColumnName("user_id");
+            entity.Property(x => x.AnimeId).HasColumnName("anime_id");
+            entity.Property(x => x.Title).HasColumnName("title").HasMaxLength(500);
+            entity.Property(x => x.Cover).HasColumnName("cover").HasMaxLength(1000);
+            entity.Property(x => x.AddedAt).HasColumnName("added_at");
+
+            entity.HasIndex(x => new { x.UserId, x.AddedAt });
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WatchHistoryEntry>(entity =>
+        {
+            entity.ToTable("watch_history");
+            entity.HasKey(x => new { x.UserId, x.AnimeId });
+
+            entity.Property(x => x.UserId).HasColumnName("user_id");
+            entity.Property(x => x.AnimeId).HasColumnName("anime_id");
+            entity.Property(x => x.Title).HasColumnName("title").HasMaxLength(500);
+            entity.Property(x => x.Cover).HasColumnName("cover").HasMaxLength(1000);
+            entity.Property(x => x.Episode).HasColumnName("episode");
+            entity.Property(x => x.Provider).HasColumnName("provider").HasMaxLength(64);
+            entity.Property(x => x.Count).HasColumnName("count");
+            entity.Property(x => x.WatchedAt).HasColumnName("watched_at");
+
+            entity.HasIndex(x => new { x.UserId, x.WatchedAt });
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserActivityLog>(entity =>
+        {
+            entity.ToTable("user_activity_logs");
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.UserId).HasColumnName("user_id");
+            entity.Property(x => x.Action).HasColumnName("action").HasMaxLength(32);
+            entity.Property(x => x.TargetType).HasColumnName("target_type").HasMaxLength(32);
+            entity.Property(x => x.TargetId).HasColumnName("target_id").HasMaxLength(64);
+            entity.Property(x => x.Detail).HasColumnName("detail").HasMaxLength(1000);
+            entity.Property(x => x.Ip).HasColumnName("ip").HasMaxLength(64);
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+
+            entity.HasIndex(x => new { x.UserId, x.CreatedAt });
+            entity.HasIndex(x => x.Action);
         });
     }
 }

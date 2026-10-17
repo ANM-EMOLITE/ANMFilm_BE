@@ -117,4 +117,10 @@ public sealed class AdminSyncController(ISyncJobService syncJobService) : Contro
     [HttpGet("jobs/{id:guid}")]
     public async Task<ActionResult<SyncJobDto>> Get(Guid id, CancellationToken cancellationToken)
         => Ok(await syncJobService.GetAsync(id, cancellationToken));
+
+    /// <summary>Dừng job đang chờ hoặc đang chạy.</summary>
+    [HttpPost("jobs/{id:guid}/cancel")]
+    [ProducesResponseType<SyncJobDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<SyncJobDto>> Cancel(Guid id, CancellationToken cancellationToken)
+        => Ok(await syncJobService.CancelAsync(id, cancellationToken));
 }

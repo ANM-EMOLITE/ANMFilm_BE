@@ -1,0 +1,22 @@
+# Render Blueprint — tạo service từ file này (New + → Blueprint, trỏ vào repo backend).
+# Các biến đánh dấu sync:false phải tự điền giá trị trong dashboard Render (không commit secret).
+services:
+  - type: web
+    name: anmfilm-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      # Render tự cấp PORT — KHÔNG tự đặt.
+      - key: ConnectionStrings__AnimeDb
+        sync: false
+      - key: Jwt__Key
+        sync: false
+      - key: Admin__Username
+        sync: false
+      - key: Admin__Password
+        sync: false

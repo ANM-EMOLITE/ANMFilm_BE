@@ -6,6 +6,12 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Render / Railway / Fly cấp cổng động qua biến PORT → lắng nghe đúng cổng đó.
+// Local không có PORT → dùng cấu hình trong launchSettings (localhost:5200).
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(port))
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 using var startupLogger = LoggerFactory.Create(logging => logging.AddConsole());
 
 builder.Services
@@ -49,5 +55,8 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapControllers();
+
+// Health check cho Render/giám sát (luôn bật, kể cả Production).
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.Run();

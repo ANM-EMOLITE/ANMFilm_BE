@@ -18,10 +18,16 @@ public sealed class JwtOptions
 
     public string Audience { get; set; } = "AnimeStreamingAdmin";
 
+    /// <summary>Audience cho token người xem (role user).</summary>
+    public string UserAudience { get; set; } = "AnimeStreamingUser";
+
     /// <summary>Khóa ký token (≥ 32 ký tự). Đặt bằng user-secrets: <c>Jwt:Key</c>.</summary>
     public string? Key { get; set; }
 
     public int ExpiresHours { get; set; } = 12;
+
+    /// <summary>Hạn token người xem (mặc định 7 ngày).</summary>
+    public int UserExpiresHours { get; set; } = 168;
 }
 
 /// <summary>Phát JWT cho admin.</summary>
@@ -47,11 +53,38 @@ public sealed class JwtAdminTokenIssuer(JwtOptions options, SymmetricSecurityKey
     }
 }
 
+/// <summary>Phát JWT cho người xem (role "user").</summary>
+public sealed class JwtUserTokenIssuer(JwtOptions options, SymmetricSecurityKey key) : IUserTokenIssuer
+{
+    public (string Token, DateTimeOffset ExpiresAt) Issue(int userId, string username)
+    {
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(options.UserExpiresHours);
+
+        var token = new JwtSecurityToken(
+            issuer: options.Issuer,
+            audience: options.UserAudience,
+            claims:
+            [
+                new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+                new Claim(JwtRegisteredClaimNames.UniqueName, username),
+                new Claim(ClaimTypes.Role, AdminAuthSetup.UserRole)
+            ],
+            expires: expiresAt.UtcDateTime,
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
+
+        return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
+    }
+}
+
 public static class AdminAuthSetup
 {
     public const string AdminRole = "admin";
 
     public const string AdminPolicy = "Admin";
+
+    public const string UserRole = "user";
+
+    public const string UserPolicy = "User";
 
     public const string LoginRateLimit = "admin-login";
 
@@ -74,6 +107,7 @@ public static class AdminAuthSetup
         var key = new SymmetricSecurityKey(keyBytes);
         services.AddSingleton(options);
         services.AddSingleton<IAdminTokenIssuer>(new JwtAdminTokenIssuer(options, key));
+        services.AddSingleton<IUserTokenIssuer>(new JwtUserTokenIssuer(options, key));
 
         JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 
@@ -85,7 +119,7 @@ public static class AdminAuthSetup
                 jwt.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidIssuer = options.Issuer,
-                    ValidAudience = options.Audience,
+                    ValidAudiences = [options.Audience, options.UserAudience],
                     IssuerSigningKey = key,
                     NameClaimType = JwtRegisteredClaimNames.UniqueName,
                     RoleClaimType = ClaimTypes.Role,
@@ -109,7 +143,8 @@ public static class AdminAuthSetup
             });
 
         services.AddAuthorizationBuilder()
-            .AddPolicy(AdminPolicy, policy => policy.RequireRole(AdminRole));
+            .AddPolicy(AdminPolicy, policy => policy.RequireRole(AdminRole))
+            .AddPolicy(UserPolicy, policy => policy.RequireRole(UserRole));
 
         // Chống dò mật khẩu: tối đa 10 lần đăng nhập / phút / IP.
         services.AddRateLimiter(limiter =>

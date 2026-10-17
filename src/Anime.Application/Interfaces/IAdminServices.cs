@@ -46,4 +46,7 @@ public interface ISyncJobService
     Task<IReadOnlyList<SyncJobDto>> ListAsync(int limit, CancellationToken cancellationToken = default);
 
     Task<SyncJobDto> GetAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>Dừng job đang chờ hoặc đang chạy. Job đã kết thúc → không đổi gì.</summary>
+    Task<SyncJobDto> CancelAsync(Guid id, CancellationToken cancellationToken = default);
 }

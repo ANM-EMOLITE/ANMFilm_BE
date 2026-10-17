@@ -126,6 +126,9 @@ public static class SyncJobStatus
     public const string Running = "RUNNING";
     public const string Succeeded = "SUCCEEDED";
     public const string Failed = "FAILED";
+
+    /// <summary>Admin bấm dừng khi job đang chờ hoặc đang chạy.</summary>
+    public const string Canceled = "CANCELED";
 }
 
 public sealed class AdminUser

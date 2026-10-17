@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Anime.Application.Common;
 using Anime.Application.Common.Exceptions;
@@ -21,9 +22,72 @@ public sealed class SyncJobQueue
     public IAsyncEnumerable<(Guid Id, string Kind)> ReadAllAsync(CancellationToken cancellationToken) => channel.Reader.ReadAllAsync(cancellationToken);
 }
 
-public sealed class SyncJobService(IDbContextFactory<AnimeDbContext> dbFactory, SyncJobQueue queue) : ISyncJobService
+/// <summary>
+/// Giữ token huỷ của job đang chạy để admin bấm dừng giữa chừng.
+/// Mỗi job chạy với token ghép từ token tắt-BE và token riêng của job này.
+/// </summary>
+public sealed class SyncJobCanceller
+{
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> running = new();
+
+    /// <summary>Đăng ký khi worker bắt đầu chạy job; trả về CTS ghép với <paramref name="linkedTo"/> (token tắt BE).</summary>
+    public CancellationTokenSource Register(Guid jobId, CancellationToken linkedTo)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTo);
+        running[jobId] = cts;
+        return cts;
+    }
+
+    public void Unregister(Guid jobId) => running.TryRemove(jobId, out _);
+
+    /// <summary>Yêu cầu dừng job đang chạy. Trả về false nếu job không còn chạy.</summary>
+    public bool Cancel(Guid jobId)
+    {
+        if (!running.TryGetValue(jobId, out var cts) || cts.IsCancellationRequested)
+            return false;
+
+        try
+        {
+            cts.Cancel();
+            return true;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    public bool IsRunning(Guid jobId) => running.ContainsKey(jobId);
+}
+
+public sealed class SyncJobService(IDbContextFactory<AnimeDbContext> dbFactory, SyncJobQueue queue, SyncJobCanceller canceller) : ISyncJobService
 {
     private static readonly SemaphoreSlim StartLock = new(1, 1);
+
+    public async Task<SyncJobDto> CancelAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var job = await db.SyncJobs.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new ApiException(404, ErrorCodes.ResourceNotFound, $"Sync job not found: {id}");
+
+        // Đã kết thúc → không làm gì.
+        if (job.Status is SyncJobStatus.Succeeded or SyncJobStatus.Failed or SyncJobStatus.Canceled)
+            return ToDto(job);
+
+        if (job.Status == SyncJobStatus.Queued)
+        {
+            // Chưa chạy → huỷ ngay (worker sẽ bỏ qua khi tới lượt).
+            job.Status = SyncJobStatus.Canceled;
+            job.Progress = "Đã huỷ";
+            job.FinishedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+            return ToDto(job);
+        }
+
+        // Đang chạy → báo worker dừng; worker sẽ cập nhật trạng thái CANCELED khi thoát.
+        canceller.Cancel(id);
+        return ToDto(job);
+    }
 
     public Task<SyncJobDto> StartAsync(StartSyncRequestDto request, string? triggeredBy, CancellationToken cancellationToken = default)
     {
@@ -171,6 +235,7 @@ public sealed class SyncJobService(IDbContextFactory<AnimeDbContext> dbFactory, 
 /// <summary>Chạy lần lượt các job trong hàng đợi. Không tự chạy theo lịch – chỉ chạy khi admin bấm.</summary>
 public sealed class SyncJobWorker(
     SyncJobQueue queue,
+    SyncJobCanceller canceller,
     IServiceProvider services,
     IDbContextFactory<AnimeDbContext> dbFactory,
     ILogger<SyncJobWorker> logger) : BackgroundService
@@ -188,14 +253,56 @@ public sealed class SyncJobWorker(
     {
         await foreach (var (jobId, kind) in queue.ReadAllAsync(stoppingToken))
         {
-            using var scope = services.CreateScope();
-            var run = kind switch
+            // Admin đã huỷ khi job còn trong hàng đợi → bỏ qua.
+            if (await IsCanceledWhileQueuedAsync(jobId, stoppingToken))
+                continue;
+
+            using var cts = canceller.Register(jobId, stoppingToken);
+            var token = cts.Token;
+            try
             {
-                SyncJobKind.Streams => scope.ServiceProvider.GetRequiredService<StreamPrefetchRunner>().RunAsync(jobId, stoppingToken),
-                SyncJobKind.Health => scope.ServiceProvider.GetRequiredService<StreamHealthRunner>().RunAsync(jobId, stoppingToken),
-                _ => scope.ServiceProvider.GetRequiredService<CatalogSyncRunner>().RunAsync(jobId, stoppingToken)
-            };
-            await run;
+                using var scope = services.CreateScope();
+                var run = kind switch
+                {
+                    SyncJobKind.Streams => scope.ServiceProvider.GetRequiredService<StreamPrefetchRunner>().RunAsync(jobId, token),
+                    SyncJobKind.Health => scope.ServiceProvider.GetRequiredService<StreamHealthRunner>().RunAsync(jobId, token),
+                    _ => scope.ServiceProvider.GetRequiredService<CatalogSyncRunner>().RunAsync(jobId, token)
+                };
+                await run;
+            }
+            finally
+            {
+                canceller.Unregister(jobId);
+            }
+
+            // Token riêng của job bị huỷ nhưng BE không tắt → admin đã bấm dừng.
+            if (cts.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
+                await MarkCanceledAsync(jobId);
+        }
+    }
+
+    private async Task<bool> IsCanceledWhileQueuedAsync(Guid jobId, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var status = await db.SyncJobs.Where(x => x.Id == jobId).Select(x => x.Status).FirstOrDefaultAsync(cancellationToken);
+        return status != SyncJobStatus.Queued;
+    }
+
+    private async Task MarkCanceledAsync(Guid jobId)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(CancellationToken.None);
+            await db.SyncJobs.Where(x => x.Id == jobId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, SyncJobStatus.Canceled)
+                    .SetProperty(x => x.Progress, "Đã huỷ")
+                    .SetProperty(x => x.Error, (string?)null)
+                    .SetProperty(x => x.FinishedAt, DateTimeOffset.UtcNow), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Cannot mark job {JobId} as canceled", jobId);
         }
     }
 
