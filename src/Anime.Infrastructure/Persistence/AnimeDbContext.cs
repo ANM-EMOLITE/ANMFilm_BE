@@ -26,6 +26,8 @@ public sealed class AnimeDbContext(DbContextOptions<AnimeDbContext> options) : D
 
     public DbSet<UserActivityLog> ActivityLogs => Set<UserActivityLog>();
 
+    public DbSet<Comment> Comments => Set<Comment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CachedResponse>(entity =>
@@ -217,6 +219,24 @@ public sealed class AnimeDbContext(DbContextOptions<AnimeDbContext> options) : D
 
             entity.HasIndex(x => new { x.UserId, x.CreatedAt });
             entity.HasIndex(x => x.Action);
+        });
+
+        modelBuilder.Entity<Comment>(entity =>
+        {
+            entity.ToTable("comments");
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.UserId).HasColumnName("user_id");
+            entity.Property(x => x.AnimeId).HasColumnName("anime_id");
+            entity.Property(x => x.Episode).HasColumnName("episode");
+            entity.Property(x => x.Content).HasColumnName("content").HasMaxLength(2000);
+            entity.Property(x => x.IsDeleted).HasColumnName("is_deleted");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.EditedAt).HasColumnName("edited_at");
+
+            entity.HasIndex(x => new { x.AnimeId, x.CreatedAt });
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

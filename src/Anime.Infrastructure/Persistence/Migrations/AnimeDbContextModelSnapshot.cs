@@ -320,6 +320,54 @@ namespace Anime.Infrastructure.Persistence.Migrations
                     b.ToTable("anime_list_items", (string)null);
                 });
 
+            modelBuilder.Entity("Anime.Infrastructure.Persistence.Comment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AnimeId")
+                        .HasColumnType("integer")
+                        .HasColumnName("anime_id");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("content");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("edited_at");
+
+                    b.Property<int?>("Episode")
+                        .HasColumnType("integer")
+                        .HasColumnName("episode");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("AnimeId", "CreatedAt");
+
+                    b.ToTable("comments", (string)null);
+                });
+
             modelBuilder.Entity("Anime.Infrastructure.Persistence.SyncJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -549,6 +597,15 @@ namespace Anime.Infrastructure.Persistence.Migrations
                     b.HasOne("Anime.Infrastructure.Persistence.CatalogAnime", null)
                         .WithMany()
                         .HasForeignKey("AnimeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Anime.Infrastructure.Persistence.Comment", b =>
+                {
+                    b.HasOne("Anime.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

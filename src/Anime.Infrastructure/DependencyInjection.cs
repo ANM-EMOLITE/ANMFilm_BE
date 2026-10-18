@@ -42,9 +42,10 @@ public static class DependencyInjection
         services.AddScoped<IAdminAuthService, AdminAuthService>();
         services.AddHostedService<SyncJobWorker>();
 
-        // Tài khoản người xem: đăng ký/đăng nhập, watchlist, lịch sử xem, nhật ký.
+        // Tài khoản người xem: đăng ký/đăng nhập, watchlist, lịch sử xem, nhật ký, bình luận.
         services.AddScoped<IUserAuthService, Users.UserAuthService>();
         services.AddScoped<IUserLibraryService, Users.UserLibraryService>();
+        services.AddScoped<ICommentService, Users.CommentService>();
 
         // AniMapper: giới hạn 60 request/phút → điều tiết request (rate gate) + cache + circuit breaker theo provider.
         services.AddSingleton<AniMapperRateGate>();

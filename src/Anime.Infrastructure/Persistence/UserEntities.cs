@@ -93,3 +93,25 @@ public static class UserActivityActions
     public const string WatchlistAdd = "WATCHLIST_ADD";
     public const string WatchlistRemove = "WATCHLIST_REMOVE";
 }
+
+/// <summary>Bình luận của user trên 1 phim (kèm tập đang xem nếu có).</summary>
+public sealed class Comment
+{
+    public long Id { get; set; }
+
+    public int UserId { get; set; }
+
+    public int AnimeId { get; set; }
+
+    /// <summary>Tập đang xem lúc bình luận (null = bình luận chung cho phim).</summary>
+    public int? Episode { get; set; }
+
+    public string Content { get; set; } = string.Empty;
+
+    /// <summary>Xoá mềm: giữ dòng nhưng ẩn nội dung, để sau mở rộng kiểm duyệt.</summary>
+    public bool IsDeleted { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? EditedAt { get; set; }
+}
